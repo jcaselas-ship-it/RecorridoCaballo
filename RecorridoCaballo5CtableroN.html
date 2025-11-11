@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego del Recorrido del Caballo</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js for sound effects -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <!-- Font Awesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Inter font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            touch-action: manipulation; /* Mejora la respuesta táctil en móviles */
+        }
+        .board-container {
+            width: 90vw;
+            height: 90vw;
+            max-width: 600px;
+            max-height: 600px;
+            /* La rejilla se define dinámicamente en JS */
+        }
+        .square {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* El tamaño de la fuente se ajusta a la pantalla */
+            font-size: clamp(10px, 2.5vw, 24px); 
+            font-weight: bold;
+            position: relative; 
+            cursor: pointer;
+            transition: background-color 0.1s ease;
+        }
+        .square:hover {
+            opacity: 0.9;
+        }
+        /* Casillas Claras (Gris claro suave) */
+        .light-square {
+            background-color: #d1d5db; /* Gray-300 */
+            color: #1f2937; /* Gris oscuro para números */
+        }
+        /* Casillas Oscuras (Azul real) */
+        .dark-square {
+            background-color: #3b82f6; /* Blue-500 */
+            color: #f7f3e8; /* Color claro para números */
+        }
+        .knight {
+            color: #000000;
+            /* El tamaño del caballo se ajusta al tablero */
+            font-size: clamp(20px, 5vw, 48px);
+            transition: transform 0.2s ease-in-out; 
+            z-index: 10;
+        }
+        .visited .knight {
+            opacity: 0.3;
+        }
+        .move-number {
+            font-size: clamp(10px, 2vw, 18px); /* Ajuste de tamaño de número */
+            opacity: 0.8;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .possible-move {
+            cursor: pointer;
+        }
+        .possible-move::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 30%;
+            height: 30%;
+            /* Círculo rojo transparente para movimientos posibles */
+            background-color: rgba(239, 68, 68, 0.6); 
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        /* Estilo del botón de ayuda cuando está activo */
+        .active-hint {
+            background-color: #facc15; /* yellow-400 */
+            color: #1f2937; /* gray-900 */
+        }
+        .message-box {
+            animation: fadeIn 0.5s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<!-- Fondo del cuerpo de la página en gris muy oscuro (bg-gray-900) -->
+<body class="bg-gray-900 flex flex-col items-center justify-start min-h-screen p-4">
+
+    <!-- Copyright: Gemini+JC 2025 -->
+
+    <div class="text-center mt-6 mb-4 w-full">
+        <!-- Título en color claro para contraste -->
+        <h1 class="text-4xl font-extrabold text-gray-100">Recorrido del Caballo</h1>
+        <!-- Frase simplificada -->
+        <p class="text-gray-400 mt-1 text-base">Visita cada casilla del tablero una sola vez.</p>
+    </div>
+
+    <!-- Controls for Size and Count (Diseño responsive: apilado en móvil, en línea en desktop) -->
+    <div class="w-full max-w-lg flex flex-col sm:flex-row justify-center items-center mb-6 space-y-4 sm:space-y-0 sm:space-x-6">
+        
+        <!-- Size Selector - Stacked layout -->
+        <div class="bg-teal-600 p-3 rounded-xl shadow-lg border-b-4 border-teal-700 w-40 text-center">
+            <span class="font-semibold text-sm text-white block mb-1">TAMAÑO</span>
+            <select id="board-size-select" class="bg-teal-700 text-white font-bold text-xl p-1 rounded-md border border-teal-500 focus:outline-none focus:ring-2 focus:ring-yellow-300 mx-auto">
+                <option value="4">4x4</option>
+                <option value="6">6x6</option>
+                <option value="8" selected>8x8</option>
+                <option value="10">10x10</option>
+            </select>
+        </div>
+
+        <!-- Move Count Box -->
+        <div class="bg-blue-200 p-3 rounded-xl shadow-lg border-b-4 border-blue-500 w-40 text-center">
+            <span class="font-semibold text-sm text-gray-700 block mb-1">MOVIMIENTOS</span>
+            <!-- Contador de movimientos con acento en azul oscuro -->
+            <span id="move-count" class="font-bold text-4xl text-blue-700">0</span>
+        </div>
+    </div>
+
+    <!-- Chessboard Container -->
+    <div class="board-container shadow-2xl rounded-lg overflow-hidden border-4 border-gray-700">
+        <!-- El CSS de la rejilla se inyecta aquí dinámicamente en JS -->
+        <div id="chessboard" class="w-full h-full"></div>
+    </div>
+
+    <!-- Game Controls (Buttons only - Below Board) -->
+    <div id="action-buttons" class="w-full max-w-lg flex items-center justify-center mt-6">
+        
+        <!-- Buttons -->
+        <div class="flex space-x-3 text-white">
+            
+            <!-- Botón de AYUDA -->
+            <button id="hint-button" class="text-2xl text-yellow-200 hover:text-yellow-400 transition-colors duration-200 w-12 h-12 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600">
+                <i id="hint-icon" class="fas fa-lightbulb"></i>
+            </button>
+
+            <!-- Botones de Acción -->
+            <button id="undo-button" disabled class="bg-yellow-400 text-gray-900 font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-yellow-300 transition-colors duration-200 disabled:bg-yellow-700 disabled:text-yellow-300 disabled:cursor-not-allowed text-base">
+                <i class="fas fa-undo-alt mr-2"></i>Deshacer
+            </button>
+            <button id="restart-button" class="bg-red-600 text-white font-semibold py-3 px-6 rounded-lg shadow-md hover:bg-red-500 transition-colors duration-200 text-base">
+                <i class="fas fa-redo-alt mr-2"></i>Reiniciar
+            </button>
+
+            <!-- Mute button, icon class updated in JS for color changes -->
+            <button id="mute-button" class="text-2xl text-gray-400 hover:text-yellow-400 transition-colors duration-200 w-12 h-12 flex items-center justify-center rounded-full bg-gray-700 hover:bg-gray-600">
+                <i id="mute-icon" class="fas fa-volume-up text-yellow-400"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Message Box -->
+    <div id="message-box-container" class="fixed inset-0 bg-black bg-opacity-70 backdrop-blur-sm flex items-center justify-center hidden z-20">
+        <div id="message-box" class="message-box bg-white p-8 rounded-xl shadow-2xl text-center max-w-sm w-full mx-4 border-t-8 border-blue-600">
+            <h2 id="message-title" class="text-3xl font-bold mb-4"></h2>
+            <p id="message-text" class="text-gray-700 mb-6"></p>
+            <button id="message-button" class="bg-blue-600 text-white font-semibold py-2 px-8 rounded-lg shadow-xl hover:bg-blue-700 transition-colors duration-200">Jugar de nuevo</button>
+        </div>
+    </div>
+
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const boardElement = document.getElementById('chessboard');
+            const moveCountElement = document.getElementById('move-count');
+            const restartButton = document.getElementById('restart-button');
+            const undoButton = document.getElementById('undo-button');
+            const muteButton = document.getElementById('mute-button');
+            const muteIcon = document.getElementById('mute-icon');
+            const hintButton = document.getElementById('hint-button'); 
+            const hintIcon = document.getElementById('hint-icon'); 
+            const messageBoxContainer = document.getElementById('message-box-container');
+            const messageTitle = document.getElementById('message-title');
+            const messageText = document.getElementById('message-text');
+            const messageButton = document.getElementById('message-button');
+            const boardSizeSelect = document.getElementById('board-size-select');
+            
+            let BOARD_SIZE = parseInt(boardSizeSelect.value); // Ahora es dinámica
+            let boardState = []; 
+            let knightPosition = { row: 0, col: 0 };
+            let moveCount = 0;
+            let moveHistory = []; 
+            let isHintActive = false; 
+            
+            // Audio synth for sound effects
+            const synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: 'triangle' },
+                envelope: { release: 0.1 }
+            }).toDestination();
+            
+            // Inicializa el contexto de audio
+            let audioInitialized = false;
+            document.body.addEventListener('click', () => {
+                if (!audioInitialized) {
+                    Tone.start();
+                    audioInitialized = true;
+                }
+            }, { once: true });
+
+
+            // Inicializa el estado del juego y el tablero
+            function initializeGame() {
+                // Se utiliza el BOARD_SIZE actual
+                boardState = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
+                moveCount = 0;
+                moveHistory = [];
+                
+                // Coloca el caballo en una posición aleatoria dentro del nuevo tamaño
+                knightPosition = {
+                    row: Math.floor(Math.random() * BOARD_SIZE),
+                    col: Math.floor(Math.random() * BOARD_SIZE)
+                };
+                
+                // Establece la posición inicial como el primer movimiento (#1)
+                visitSquare(knightPosition.row, knightPosition.col);
+                moveHistory.push({...knightPosition});
+                
+                updateBoard();
+                updateMoveCount();
+                updateUndoButtonState();
+                messageBoxContainer.classList.add('hidden');
+                // Asegura que la ayuda esté apagada al inicio
+                setHintState(false); 
+                boardElement.style.pointerEvents = 'auto'; 
+            }
+
+            // Renderiza el tablero
+            function updateBoard() {
+                boardElement.innerHTML = '';
+
+                // *** Configuración dinámica de la rejilla CSS ***
+                boardElement.style.display = 'grid';
+                boardElement.style.gridTemplateColumns = `repeat(${BOARD_SIZE}, 1fr)`;
+                boardElement.style.gridTemplateRows = `repeat(${BOARD_SIZE}, 1fr)`;
+                
+                // Itera usando el BOARD_SIZE actual
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                    for (let c = 0; c < BOARD_SIZE; c++) {
+                        const square = document.createElement('div');
+                        square.dataset.row = r;
+                        square.dataset.col = c;
+                        square.classList.add('square');
+                        
+                        const isLight = (r + c) % 2 === 0;
+                        square.classList.add(isLight ? 'light-square' : 'dark-square');
+
+                        // Muestra el número si la casilla ha sido visitada
+                        if (boardState[r][c] > 0) {
+                            square.classList.add('visited');
+                            const moveNumber = document.createElement('span');
+                            moveNumber.textContent = boardState[r][c];
+                            moveNumber.classList.add('move-number');
+                            square.appendChild(moveNumber);
+                        }
+
+                        // Muestra el caballo si esta es la posición actual
+                        if (r === knightPosition.row && c === knightPosition.col) {
+                            const knightIcon = document.createElement('i');
+                            knightIcon.style.transform = ''; 
+                            knightIcon.style.color = '#000000'; 
+                            knightIcon.style.zIndex = 10;
+                            knightIcon.className = 'fas fa-chess-knight knight';
+                            
+                            square.replaceChildren(knightIcon);
+                            square.classList.remove('visited');
+                        }
+
+                        square.addEventListener('click', () => handleSquareClick(r, c));
+                        boardElement.appendChild(square);
+                    }
+                }
+                // SOLO resaltar si la ayuda está activa
+                if (isHintActive) {
+                    highlightPossibleMoves();
+                }
+            }
+            
+            /**
+             * @description Activa o desactiva la visibilidad de los movimientos posibles.
+             * @param {boolean} activate - Nuevo estado de la ayuda.
+             */
+            function setHintState(activate) {
+                isHintActive = activate;
+                if (isHintActive) {
+                    hintButton.classList.add('active-hint');
+                    // Icono en gris oscuro para contrastar con el fondo amarillo activo
+                    hintIcon.classList.remove('text-yellow-200'); 
+                    hintIcon.classList.add('text-gray-900');
+                    highlightPossibleMoves();
+                } else {
+                    hintButton.classList.remove('active-hint');
+                    // Icono en amarillo claro para mejor visibilidad en estado inactivo
+                    hintIcon.classList.add('text-yellow-200'); 
+                    hintIcon.classList.remove('text-gray-900');
+                    clearPossibleMoves();
+                }
+            }
+
+            /**
+             * @description Limpia el resaltado de todos los movimientos posibles.
+             */
+            function clearPossibleMoves() {
+                document.querySelectorAll('.possible-move').forEach(square => {
+                    square.classList.remove('possible-move');
+                });
+            }
+
+
+            // Maneja el clic en una casilla
+            function handleSquareClick(row, col) {
+                if (isValidMove(row, col)) {
+                    // SONIDO DE MOVIMIENTO
+                    if (!Tone.Master.mute) {
+                        synth.triggerAttackRelease("G4", "32n", Tone.now());
+                    }
+
+                    // Actualizar la posición y el historial
+                    knightPosition = { row, col };
+                    moveHistory.push({...knightPosition});
+                    visitSquare(row, col);
+                    
+                    // Actualizar la ayuda antes de redibujar el tablero
+                    if (isHintActive) {
+                        clearPossibleMoves();
+                    }
+                    
+                    // Actualizar el estado del juego
+                    updateBoard();
+                    updateMoveCount();
+                    updateUndoButtonState();
+                    checkGameState();
+                    
+                } else {
+                     // Toca sonido de movimiento inválido (nota grave)
+                    if (boardState[row][col] === 0 && !Tone.Master.mute) {
+                        synth.triggerAttackRelease("C3", "32n", Tone.now());
+                    }
+                }
+            }
+            
+            // Marca una casilla como visitada
+            function visitSquare(row, col) {
+                moveCount++;
+                boardState[row][col] = moveCount;
+            }
+
+            /**
+             * @description Deshace el último movimiento realizado por el caballo.
+             */
+            function undoLastMove() {
+                // Solo se puede deshacer si hay al menos el movimiento inicial + 1 movimiento adicional
+                if (moveHistory.length > 1) {
+                    // 1. Obtener y eliminar la última posición
+                    const lastPos = moveHistory.pop(); 
+                    
+                    // 2. Limpiar el estado de visita en el tablero
+                    boardState[lastPos.row][lastPos.col] = 0;
+
+                    // 3. Obtener la nueva posición actual (la anterior a la última)
+                    knightPosition = moveHistory[moveHistory.length - 1];
+
+                    // 4. Actualizar el contador
+                    moveCount--; 
+
+                    // 5. SONIDO DE DESHACER
+                    if (!Tone.Master.mute) {
+                        synth.triggerAttackRelease(["C4", "B3"], "8n", Tone.now());
+                    }
+
+                    // 6. Actualizar UI
+                    updateBoard();
+                    updateMoveCount();
+                    updateUndoButtonState();
+                    messageBoxContainer.classList.add('hidden'); 
+                }
+            }
+
+            // Verifica si un movimiento es válido
+            function isValidMove(targetRow, targetCol) {
+                // Debe estar dentro de los límites del tablero actual
+                if (targetRow < 0 || targetRow >= BOARD_SIZE || targetCol < 0 || targetCol >= BOARD_SIZE) return false;
+
+                if (boardState[targetRow][targetCol] > 0) return false; // Ya visitado
+
+                const dRow = Math.abs(targetRow - knightPosition.row);
+                const dCol = Math.abs(targetCol - knightPosition.col);
+                
+                // Movimiento de caballo (L)
+                return (dRow === 2 && dCol === 1) || (dRow === 1 && dCol === 2);
+            }
+            
+            // Obtiene todos los movimientos posibles no visitados
+            function getPossibleMoves() {
+                const moves = [];
+                const moveOffsets = [
+                    {r: -2, c: -1}, {r: -2, c: 1}, {r: -1, c: -2}, {r: -1, c: 2},
+                    {r: 1, c: -2}, {r: 1, c: 2}, {r: 2, c: -1}, {r: 2, c: 1}
+                ];
+                
+                for (const offset of moveOffsets) {
+                    const newRow = knightPosition.row + offset.r;
+                    const newCol = knightPosition.col + offset.c;
+                    
+                    // Verifica límites (usa BOARD_SIZE) y si la casilla no ha sido visitada
+                    if (newRow >= 0 && newRow < BOARD_SIZE && newCol >= 0 && newCol < BOARD_SIZE && boardState[newRow][newCol] === 0) {
+                        moves.push({row: newRow, col: newCol});
+                    }
+                }
+                return moves;
+            }
+
+            // Resalta los movimientos posibles
+            function highlightPossibleMoves() {
+                // Limpia los movimientos viejos antes de resaltar los nuevos
+                clearPossibleMoves();
+                
+                const possibleMoves = getPossibleMoves();
+                possibleMoves.forEach(move => {
+                    const square = boardElement.querySelector(`[data-row='${move.row}'][data-col='${move.col}']`);
+                    if (square) {
+                        square.classList.add('possible-move');
+                    }
+                });
+            }
+
+            // Actualiza el contador de movimientos
+            function updateMoveCount() {
+                moveCountElement.textContent = moveCount;
+            }
+
+            // Actualiza el estado del botón Deshacer
+            function updateUndoButtonState() {
+                // Deshacer está deshabilitado si solo queda el movimiento de inicio
+                undoButton.disabled = moveHistory.length <= 1;
+            }
+            
+            // Verifica si el juego ha terminado
+            function checkGameState() {
+                const now = Tone.now(); 
+                const totalSquares = BOARD_SIZE * BOARD_SIZE;
+
+                if (moveCount === totalSquares) {
+                    // Sonido de Victoria
+                    if (!Tone.Master.mute) { 
+                        synth.triggerAttackRelease(["C5", "E5", "G5", "C6"], "0.5", now + 0.05); 
+                    } 
+                    showEndGameMessage(true, totalSquares);
+                } else if (getPossibleMoves().length === 0) {
+                    // Sonido de Derrota
+                    if (!Tone.Master.mute) { 
+                        synth.triggerAttackRelease(["C4", "E4", "G4"], "0.25", now + 0.05); 
+                    } 
+                    showEndGameMessage(false, totalSquares);
+                }
+            }
+
+            // Muestra el mensaje de fin de juego (recibe el total de casillas)
+            function showEndGameMessage(isWin, totalSquares) {
+                setHintState(false); 
+
+                if (isWin) {
+                    messageTitle.textContent = '¡Felicidades, Recorrido Cerrado!';
+                    messageText.textContent = `¡Has completado el recorrido del caballo en un tablero ${BOARD_SIZE}x${BOARD_SIZE} con ${moveCount} movimientos! Eres un maestro.`;
+                    messageTitle.style.color = '#10B981'; // green-500
+                    messageBoxContainer.querySelector('.border-t-8').style.borderColor = '#10B981';
+                } else {
+                    messageTitle.textContent = '¡Casi lo logras!';
+                    messageText.textContent = `Te quedaste atascado en el movimiento ${moveCount} de ${totalSquares}. ¡Inténtalo de nuevo!`;
+                    messageTitle.style.color = '#3b82f6'; // blue-500 
+                    messageBoxContainer.querySelector('.border-t-8').style.borderColor = '#3b82f6';
+                }
+                messageBoxContainer.classList.remove('hidden');
+            }
+
+            // --- Event Listeners ---
+            
+            // Listener para el selector de tamaño
+            boardSizeSelect.addEventListener('change', (e) => {
+                const newSize = parseInt(e.target.value);
+                if (newSize > 0) {
+                    BOARD_SIZE = newSize;
+                    initializeGame(); // Reinicia el juego con el nuevo tamaño
+                }
+            });
+
+            restartButton.addEventListener('click', initializeGame);
+            messageButton.addEventListener('click', initializeGame);
+            undoButton.addEventListener('click', undoLastMove);
+            
+            // Listener para el botón de ayuda
+            hintButton.addEventListener('click', () => {
+                setHintState(!isHintActive);
+            });
+            
+            // Listener para el botón de silencio
+            muteButton.addEventListener('click', () => {
+                const isMuted = Tone.Master.mute;
+                Tone.Master.mute = !isMuted;
+                if (isMuted) {
+                    muteIcon.className = 'fas fa-volume-up text-yellow-400';
+                } else {
+                    muteIcon.className = 'fas fa-volume-mute text-red-400';
+                }
+            });
+
+            // Inicia el juego
+            initializeGame();
+        });
+    </script>
+</body>
+</html>
